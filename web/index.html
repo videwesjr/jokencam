@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JokenCam</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="brand">
+      <h1>JOKENCAM</h1>
+    </div>
+    <div class="center">
+      <div class="score sP1">
+        <span class="nm">PLAYER</span>
+        <span class="pts" id="scoreP">0</span>
+      </div>
+      <div class="clock">
+        <span class="clabel">ROUND</span>
+        <span id="roundNum">&mdash;</span>
+      </div>
+      <div class="score sP2">
+        <span class="nm">CPU</span>
+        <span class="pts" id="scoreC">0</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <button id="fs" class="ghost">FULLSCREEN</button>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div class="arenawrap"><canvas id="arena" width="900" height="560"></canvas></div>
+    <aside class="campanel">
+      <span class="panel-title">CAMERA</span>
+      <canvas id="pip" width="260" height="195"></canvas>
+      <p class="hint" id="status">connecting&hellip;</p>
+      <div id="gesture-display" class="gpill">no gesture</div>
+      <ul class="legend">
+        <li>✊ &nbsp;fist &mdash; <b>Rock</b></li>
+        <li>✋ &nbsp;open hand &mdash; <b>Paper</b></li>
+        <li>✌️ &nbsp;two fingers &mdash; <b>Scissors</b></li>
+      </ul>
+      <p class="small muted">Keyboard fallback during countdown:<br><b>1</b> Rock &nbsp; <b>2</b> Paper &nbsp; <b>3</b> Scissors</p>
+    </aside>
+  </div>
+
+  <div id="menu" class="overlay">
+    <div class="card">
+      <h2>JOKENCAM ✊✋✌️</h2>
+      <p>Hold your move in front of the camera when the countdown starts. The gesture detected at <b>zero</b> is locked in.</p>
+      <p>Rock beats Scissors &nbsp;·&nbsp; Scissors beats Paper &nbsp;·&nbsp; Paper beats Rock</p>
+      <div class="modes">
+        <button id="btn-play" class="big">PLAY vs CPU</button>
+      </div>
+      <p class="small">First to win <b>3 rounds</b> (max 5). Best of luck!</p>
+    </div>
+  </div>
+</div>
+
+<video id="cam" playsinline muted></video>
+<canvas id="grab" width="320" height="240"></canvas>
+<script src="game.js"></script>
+</body>
+</html>
