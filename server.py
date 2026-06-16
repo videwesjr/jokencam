@@ -2,6 +2,7 @@ import asyncio
 import functools
 import http.server
 import json
+import logging
 import os
 import socketserver
 import threading
@@ -13,21 +14,29 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 import websockets
 
+logging.basicConfig(level=logging.ERROR)
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(HERE, "web")
 MODEL = os.path.join(HERE, "hand_landmarker.task")
 HTTP_PORT = 8000
 WS_PORT = 8765
 
+# Single shared detector; serialized with a lock because run_in_executor
+# dispatches to threads and HandLandmarker is not thread-safe.
+_detector = None
+_det_lock = threading.Lock()
 
-def new_detector():
+
+def _build_detector():
+    global _detector
     base = mp_python.BaseOptions(model_asset_path=MODEL)
     options = vision.HandLandmarkerOptions(
         base_options=base,
         num_hands=2,
         running_mode=vision.RunningMode.IMAGE,
     )
-    return vision.HandLandmarker.create_from_options(options)
+    _detector = vision.HandLandmarker.create_from_options(options)
 
 
 def classify(lm):
@@ -49,32 +58,38 @@ def classify(lm):
     return {"gesture": "none"}
 
 
-def hands_from_frame(detector, data):
+def hands_from_frame(data):
     buf = np.frombuffer(data, dtype=np.uint8)
     frame = cv2.imdecode(buf, cv2.IMREAD_COLOR)
     if frame is None:
         return {"gesture": "none"}
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-    result = detector.detect(image)
+    try:
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        with _det_lock:
+            result = _detector.detect(image)
+    except Exception as exc:
+        logging.error("detection error: %s", exc)
+        return {"gesture": "none"}
     if not result.hand_landmarks:
         return {"gesture": "none"}
     return classify(result.hand_landmarks[0])
 
 
 async def handle(ws):
-    detector = new_detector()
     loop = asyncio.get_event_loop()
     try:
         async for message in ws:
             if not isinstance(message, (bytes, bytearray)):
                 continue
-            payload = await loop.run_in_executor(None, hands_from_frame, detector, bytes(message))
+            try:
+                payload = await loop.run_in_executor(None, hands_from_frame, bytes(message))
+            except Exception as exc:
+                logging.error("frame executor error: %s", exc)
+                payload = {"gesture": "none"}
             await ws.send(json.dumps(payload))
     except websockets.ConnectionClosed:
         pass
-    finally:
-        detector.close()
 
 
 class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
@@ -91,6 +106,13 @@ def serve_http():
 
 
 async def main():
+    if not os.path.exists(MODEL):
+        raise FileNotFoundError(
+            f"Model file not found: {MODEL}\n"
+            "Download hand_landmarker.task from "
+            "https://developers.google.com/mediapipe/solutions/vision/hand_landmarker"
+        )
+    _build_detector()
     threading.Thread(target=serve_http, daemon=True).start()
     async with websockets.serve(handle, "", WS_PORT, max_size=2 ** 22):
         print(f"jokencam at http://localhost:{HTTP_PORT}")

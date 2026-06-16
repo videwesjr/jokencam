@@ -41,6 +41,10 @@ const GESTURES = ["rock", "paper", "scissors"];
 const SYMBOLS  = { rock: "✊", paper: "✋", scissors: "✌️" };
 const LABELS   = { rock: "ROCK", paper: "PAPER", scissors: "SCISSORS" };
 
+function gestureLabel(g) {
+  return (SYMBOLS[g] || "") + "  " + (LABELS[g] || "");
+}
+
 // ─── State ───────────────────────────────────────────────────────────────────
 let phase = "menu";
 let roundNum = 0;
@@ -135,17 +139,31 @@ function rr(c, x, y, w, h, r) {
   c.closePath();
 }
 
+// Pre-parse the RGB components for palette constants so hexRgba avoids
+// repeated parseInt on every frame.
+const _hexRgbCache = new Map();
+[P_COLOR, C_COLOR, WIN_COL, LOSE_COL, TIE_COL].forEach(h => {
+  const n = parseInt(h.slice(1), 16);
+  _hexRgbCache.set(h, `${n >> 16},${(n >> 8) & 255},${n & 255}`);
+});
+
 function hexRgba(hex, a) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+  let rgb = _hexRgbCache.get(hex);
+  if (!rgb) {
+    const n = parseInt(hex.slice(1), 16);
+    rgb = `${n >> 16},${(n >> 8) & 255},${n & 255}`;
+  }
+  return `rgba(${rgb},${a})`;
 }
+
+// Background gradient is constant — create once instead of every frame.
+const _bgGradient = ctx.createLinearGradient(0, 0, W, H);
+_bgGradient.addColorStop(0, "#0d1b2e");
+_bgGradient.addColorStop(1, "#16243a");
 
 // ─── Background ──────────────────────────────────────────────────────────────
 function drawBg() {
-  const g = ctx.createLinearGradient(0, 0, W, H);
-  g.addColorStop(0, "#0d1b2e");
-  g.addColorStop(1, "#16243a");
-  ctx.fillStyle = g;
+  ctx.fillStyle = _bgGradient;
   ctx.fillRect(0, 0, W, H);
 
   ctx.strokeStyle = "rgba(255,255,255,0.025)";
@@ -399,7 +417,7 @@ function drawPip() {
     pctx.textAlign = "center";
     pctx.textBaseline = "middle";
     pctx.fillText(
-      hasG ? ((SYMBOLS[currentGesture] || "") + "  " + (LABELS[currentGesture] || "")) : "NO GESTURE",
+      hasG ? gestureLabel(currentGesture) : "NO GESTURE",
       pip.width / 2, pip.height - 15
     );
     pctx.textBaseline = "alphabetic";
@@ -424,9 +442,7 @@ function updateStatus() {
 
 function updateGesturePill() {
   const hasG = currentGesture !== "none";
-  elGesture.textContent = hasG
-    ? ((SYMBOLS[currentGesture] || "") + "  " + (LABELS[currentGesture] || ""))
-    : "no gesture";
+  elGesture.textContent = hasG ? gestureLabel(currentGesture) : "no gesture";
   elGesture.classList.toggle("detected", hasG);
 }
 
@@ -454,6 +470,7 @@ function connectWS() {
 
 async function initCam() {
   try {
+    if (cam.srcObject) cam.srcObject.getTracks().forEach(t => t.stop());
     const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 }, audio: false });
     cam.srcObject = stream;
     await cam.play();
@@ -469,7 +486,7 @@ function maybeSend(ts) {
   gctx.drawImage(cam, 0, 0, grab.width, grab.height);
   grab.toBlob((blob) => {
     if (!blob || !ws || ws.readyState !== 1) { awaiting = false; return; }
-    blob.arrayBuffer().then((b) => { if (ws.readyState === 1) ws.send(b); else awaiting = false; });
+    try { ws.send(blob); } catch (_) { awaiting = false; }
   }, "image/jpeg", 0.5);
 }
 
@@ -535,8 +552,13 @@ document.getElementById("btn-play").addEventListener("click", () => {
 document.getElementById("fs").addEventListener("click", () => {
   const el = document.querySelector(".shell");
   const on = document.fullscreenElement || document.webkitFullscreenElement;
-  if (on) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-  else (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+  if (on) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) exit.call(document);
+  } else {
+    const enter = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (enter) enter.call(el);
+  }
 });
 
 connectWS();
